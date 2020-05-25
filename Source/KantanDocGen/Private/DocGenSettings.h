@@ -14,6 +14,13 @@
 #include "Misc/App.h"
 #include "DocGenSettings.generated.h"
 
+UENUM()
+enum class EAdvancedPinDisplayMode : uint8
+{
+	Both,
+	HiddenOnly,
+	AdvancedOnly
+};
 
 USTRUCT()
 struct FKantanDocGenSettings
@@ -23,7 +30,16 @@ struct FKantanDocGenSettings
 public:
 	UPROPERTY(EditAnywhere, Category = "Documentation")
 	FString DocumentationTitle;
-		
+
+	UPROPERTY(EditAnywhere, Category = "Output")
+	bool bGenerateNodeImages;
+
+	UPROPERTY(EditAnywhere, Category = "Output")
+	bool bGenerateXML;
+
+	UPROPERTY(EditAnywhere, Category = "Output")
+	EAdvancedPinDisplayMode AdvancedPinDisplayMode;
+
 	/** List of C++ modules in which to search for blueprint-exposed classes to document. */
 	UPROPERTY(EditAnywhere, Category = "Class Search", Meta = (Tooltip = "Raw module names (Do not prefix with '/Script')."))
 	TArray< FName > NativeModules;
@@ -55,6 +71,8 @@ public:
 	{
 		BlueprintContextClass = AActor::StaticClass();
 		bCleanOutputDirectory = false;
+		bGenerateNodeImages = true;
+		bGenerateXML = false;
 	}
 
 	bool HasAnySources() const

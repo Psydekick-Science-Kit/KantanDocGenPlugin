@@ -88,7 +88,7 @@ void FDocGenTaskProcessor::Stop()
 void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 {
 	/********** Lambdas for the game thread to execute **********/
-	
+
 	auto GameThread_InitDocGen = [this](FString const& DocTitle, FString const& IntermediateDir) -> bool
 	{
 		Current->Task->Notification->SetExpireDuration(2.0f);
@@ -205,7 +205,7 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 
 	FString IntermediateDir = FPaths::ProjectIntermediateDir() / TEXT("KantanDocGen") / Current->Task->Settings.DocumentationTitle;
 
-	DocGenThreads::RunOnGameThread(GameThread_EnqueueEnumerators);	
+	DocGenThreads::RunOnGameThread(GameThread_EnqueueEnumerators);
 
 	// Initialize the doc generator
 	Current->DocGen = MakeUnique< FNodeDocsGenerator >();
@@ -242,18 +242,43 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 			{
 				// NodeInst should hopefully not reference anything except stuff we control (ie graph object), and it's rooted so should be safe to deal with here
 
-				// Generate image
-				if(!Current->DocGen->GenerateNodeImage(NodeInst, NodeState))
+				if(Current->Task->Settings.bGenerateNodeImages)
 				{
-					UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node image!"))
-					continue;
+					// Generate image
+					EAdvancedPinDisplayMode AdvancedMode = Current->Task->Settings.AdvancedPinDisplayMode;
+					if(AdvancedMode == EAdvancedPinDisplayMode::HiddenOnly || AdvancedMode == EAdvancedPinDisplayMode::Both)
+					{
+						if(!Current->DocGen->GenerateNodeImage(NodeInst, NodeState))
+						{
+							UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node image!"))
+							continue;
+						}
+					}
+
+					if(AdvancedMode == EAdvancedPinDisplayMode::AdvancedOnly || AdvancedMode == EAdvancedPinDisplayMode::Both)
+					{
+						if(NodeInst->AdvancedPinDisplay == ENodeAdvancedPins::Hidden)
+						{
+							NodeInst->AdvancedPinDisplay = ENodeAdvancedPins::Shown;
+						}
+
+						if(!Current->DocGen->GenerateNodeImage(NodeInst, NodeState))
+						{
+							UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate expanded node image!"))
+							continue;
+						}
+					}
+
 				}
 
-				// Generate doc
-				if(!Current->DocGen->GenerateNodeDocs(NodeInst, NodeState))
+				if(Current->Task->Settings.bGenerateXML)
 				{
-					UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node doc xml!"))
-					continue;
+					// Generate doc
+					if(!Current->DocGen->GenerateNodeDocs(NodeInst, NodeState))
+					{
+						UE_LOG(LogKantanDocGen, Warning, TEXT("Failed to generate node doc xml!"))
+						continue;
+					}
 				}
 
 				++SuccessfulNodeCount;
@@ -276,159 +301,24 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 	}
 
 	// Game thread: DocGen.GT_Finalize()
-	if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_FinalizeDocs, IntermediateDir))
+
+	if(Current->Task->Settings.bGenerateXML)
 	{
-		UE_LOG(LogKantanDocGen, Error, TEXT("Failed to finalize xml docs!"));
-		return;
+		if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_FinalizeDocs, IntermediateDir))
+		{
+			UE_LOG(LogKantanDocGen, Error, TEXT("Failed to finalize xml docs!"));
+			return;
+		}
 	}
 
 	DocGenThreads::RunOnGameThread([this]
 		{
-			Current->Task->Notification->SetText(LOCTEXT("DocConversionInProgress", "Converting docs"));
-		});
-
-	auto TransformationResult = ProcessIntermediateDocs(
-		IntermediateDir,
-		Current->Task->Settings.OutputDirectory.Path,
-		Current->Task->Settings.DocumentationTitle,
-		Current->Task->Settings.bCleanOutputDirectory
-	);
-	if(TransformationResult != EIntermediateProcessingResult::Success)
-	{
-		UE_LOG(LogKantanDocGen, Error, TEXT("Failed to transform xml to html!"));
-
-		auto Msg = FText::Format(LOCTEXT("DocConversionFailed", "Doc gen failed - {0}"),
-			TransformationResult == EIntermediateProcessingResult::DiskWriteFailure ? LOCTEXT("CouldNotWriteToOutput", "Could not write output, please clear output directory or enable 'Clean Output Directory' option") : LOCTEXT("GenericTransformationFailure", "Conversion failure")
-			);
-		DocGenThreads::RunOnGameThread([this, Msg]
-			{
-				Current->Task->Notification->SetText(Msg);
-				Current->Task->Notification->SetCompletionState(SNotificationItem::CS_Fail);
-				Current->Task->Notification->ExpireAndFadeout();
-			});
-		//GEditor->PlayEditorSound(CompileSuccessSound);
-		return;
-	}
-
-	DocGenThreads::RunOnGameThread([this]
-		{
-			FString HyperlinkTarget = TEXT("file://") / FPaths::ConvertRelativePathToFull(Current->Task->Settings.OutputDirectory.Path / Current->Task->Settings.DocumentationTitle / TEXT("index.html"));
-			auto OnHyperlinkClicked = [HyperlinkTarget]
-			{
-				UE_LOG(LogKantanDocGen, Log, TEXT("Invoking hyperlink"));
-				FPlatformProcess::LaunchURL(*HyperlinkTarget, nullptr, nullptr);
-			};
-
-			auto const HyperlinkText = TAttribute< FText >::Create(TAttribute< FText >::FGetter::CreateLambda([] { return LOCTEXT("GeneratedDocsHyperlink", "View docs"); }));
-			// @TODO: Bug in SNotificationItemImpl::SetHyperlink, ignores non-delegate attributes... LOCTEXT("GeneratedDocsHyperlink", "View docs");
-		
 			Current->Task->Notification->SetText(LOCTEXT("DocConversionSuccessful", "Doc gen completed"));
 			Current->Task->Notification->SetCompletionState(SNotificationItem::CS_Success);
-			Current->Task->Notification->SetHyperlink(
-				FSimpleDelegate::CreateLambda(OnHyperlinkClicked),
-				HyperlinkText
-			);
 			Current->Task->Notification->ExpireAndFadeout();
 		});
 
 	Current.Reset();
 }
-
-FDocGenTaskProcessor::EIntermediateProcessingResult FDocGenTaskProcessor::ProcessIntermediateDocs(FString const& IntermediateDir, FString const& OutputDir, FString const& DocTitle, bool bCleanOutput)
-{
-	auto& PluginManager = IPluginManager::Get();
-	auto Plugin = PluginManager.FindPlugin(TEXT("KantanDocGen"));
-	if(!Plugin.IsValid())
-	{
-		UE_LOG(LogKantanDocGen, Error, TEXT("Failed to locate plugin info"));
-		return EIntermediateProcessingResult::UnknownError;
-	}
-
-	const FString DocGenToolBinPath = Plugin->GetBaseDir() / TEXT("ThirdParty") / TEXT("KantanDocGenTool") / TEXT("bin");
-	const FString DocGenToolExeName = TEXT("KantanDocGen.exe");
-	const FString DocGenToolPath = DocGenToolBinPath / DocGenToolExeName;
-
-	// Create a read and write pipe for the child process
-	void* PipeRead = nullptr;
-	void* PipeWrite = nullptr;
-	verify(FPlatformProcess::CreatePipe(PipeRead, PipeWrite));
-
-	FString Args =
-		FString(TEXT("-outputdir=")) + TEXT("\"") + OutputDir + TEXT("\"")
-		+ TEXT(" -fromintermediate -intermediatedir=") + TEXT("\"") + IntermediateDir + TEXT("\"")
-		+ TEXT(" -name=") + DocTitle
-		+ (bCleanOutput ? TEXT(" -cleanoutput") : TEXT(""))
-		;
-	UE_LOG(LogKantanDocGen, Log, TEXT("Invoking conversion tool: %s %s"), *DocGenToolPath, *Args);
-	FProcHandle Proc = FPlatformProcess::CreateProc(
-		*DocGenToolPath,
-		*Args,
-		true,
-		false,
-		false,
-		nullptr,
-		0,
-		nullptr,
-		PipeWrite
-	);
-
-	int32 ReturnCode = 0;
-	if(Proc.IsValid())
-	{
-		FString BufferedText;
-		for(bool bProcessFinished = false; !bProcessFinished; )
-		{
-			bProcessFinished = FPlatformProcess::GetProcReturnCode(Proc, &ReturnCode);
-
-			/*			if(!bProcessFinished && Warn->ReceivedUserCancel())
-			{
-			FPlatformProcess::TerminateProc(ProcessHandle);
-			bProcessFinished = true;
-			}
-			*/
-			BufferedText += FPlatformProcess::ReadPipe(PipeRead);
-
-			int32 EndOfLineIdx;
-			while(BufferedText.FindChar('\n', EndOfLineIdx))
-			{
-				FString Line = BufferedText.Left(EndOfLineIdx);
-				Line.RemoveFromEnd(TEXT("\r"));
-
-				UE_LOG(LogKantanDocGen, Log, TEXT("[KantanDocGen] %s"), *Line);
-
-				BufferedText = BufferedText.Mid(EndOfLineIdx + 1);
-			}
-
-			FPlatformProcess::Sleep(0.1f);
-		}
-
-		//FPlatformProcess::WaitForProc(Proc);
-		//FPlatformProcess::GetProcReturnCode(Proc, &ReturnCode);
-		FPlatformProcess::CloseProc(Proc);
-		Proc.Reset();
-
-		if(ReturnCode != 0)
-		{
-			UE_LOG(LogKantanDocGen, Error, TEXT("KantanDocGen tool failed (code %i), see above output."), ReturnCode);
-		}
-	}
-
-	// Close the pipes
-	FPlatformProcess::ClosePipe(0, PipeRead);
-	FPlatformProcess::ClosePipe(0, PipeWrite);
-
-	switch(ReturnCode)
-	{
-		case 0:
-		return EIntermediateProcessingResult::Success;
-		case -1:
-		return EIntermediateProcessingResult::UnknownError;
-		case -2:
-		return EIntermediateProcessingResult::DiskWriteFailure;
-		default:
-		return EIntermediateProcessingResult::SuccessWithErrors;
-	}
-}
-
 
 #undef LOCTEXT_NAMESPACE

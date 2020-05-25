@@ -101,7 +101,7 @@ UK2Node* FNodeDocsGenerator::GT_InitializeForSpawner(UBlueprintNodeSpawner* Spaw
 		// Also update the index xml
 		UpdateIndexDocWithClass(IndexXml.Get(), AssociatedClass);
 	}
-	
+
 	OutState = FNodeProcessingState();
 	OutState.ClassDocXml = ClassDocsMap.FindChecked(AssociatedClass);
 	OutState.ClassDocsPath = OutputDir / GetClassDocId(AssociatedClass);
@@ -170,7 +170,7 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 		auto RenderTarget = Renderer.DrawWidget(NodeWidget.ToSharedRef(), DrawSize);
 
 		auto Desired = NodeWidget->GetDesiredSize();
-	
+
 		FTextureRenderTargetResource* RTResource = RenderTarget->GameThread_GetRenderTargetResource();
 		Rect = FIntRect(0, 0, (int32)Desired.X, (int32)Desired.Y);
 		FReadSurfaceDataFlags ReadPixelFlags(RCM_UNorm);
@@ -192,9 +192,18 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 		return false;
 	}
 
-	State.RelImageBasePath = TEXT("../img");
-	FString ImageBasePath = State.ClassDocsPath / TEXT("img");// State.RelImageBasePath;
-	FString ImgFilename = FString::Printf(TEXT("nd_img_%s.png"), *NodeName);
+	State.RelImageBasePath = TEXT(".");
+	FString ImageBasePath = State.ClassDocsPath;
+	FString ImgFilename;
+	if(Node->AdvancedPinDisplay == ENodeAdvancedPins::Shown)
+	{
+		ImgFilename = FString::Printf(TEXT("%s_expanded.png"), *NodeName);
+	}
+	else
+	{
+		ImgFilename = FString::Printf(TEXT("%s.png"), *NodeName);
+	}
+
 	FString ScreenshotSaveName = ImageBasePath / ImgFilename;
 
 	TUniquePtr<FImageWriteTask> ImageTask = MakeUnique<FImageWriteTask>();
@@ -204,7 +213,7 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 	ImageTask->CompressionQuality = (int32)EImageCompressionQuality::Default;
 	ImageTask->bOverwriteFile = true;
 	ImageTask->PixelPreProcessors.Add(TAsyncAlphaWrite<FColor>(255));
-	
+
 	if(ImageTask->RunTask())
 	{
 		// Success!
@@ -252,7 +261,7 @@ bool ExtractPinInformation(UEdGraphPin* Pin, FString& OutName, FString& OutType,
 	{
 		// @NOTE: This is based on the formatting in UEdGraphSchema_K2::ConstructBasicPinTooltip.
 		// If that is changed, this will fail!
-		
+
 		auto TooltipPtr = *Tooltip;
 
 		// Parse name line
@@ -344,7 +353,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 {
 	SCOPE_SECONDS_COUNTER(GenerateNodeDocsTime);
 
-	auto NodeDocsPath = State.ClassDocsPath / TEXT("nodes");
+	auto NodeDocsPath = State.ClassDocsPath;
 	FString DocFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".xml"));
 
 	const FString FileTemplate = R"xxx(<?xml version="1.0" encoding="UTF-8"?>
@@ -352,7 +361,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 
 	FXmlFile File(FileTemplate, EConstructMethod::ConstructFromBuffer);
 	auto Root = File.GetRootNode();
-	
+
 	AppendChildCDATA(Root, TEXT("docs_name"), DocsTitle);
 	// Since we pull these from the class xml file, the entries are already CDATA wrapped
 	AppendChildRaw(Root, TEXT("class_id"), State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("id"))->GetContent());//GetClassDocId(Class));
@@ -378,7 +387,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 	AppendChildCDATA(Root, TEXT("description"), NodeDesc);
 	AppendChildCDATA(Root, TEXT("imgpath"), State.RelImageBasePath / State.ImageFilename);
 	AppendChildCDATA(Root, TEXT("category"), Node->GetMenuCategory().ToString());
-	
+
 	auto Inputs = AppendChild(Root, TEXT("inputs"));
 	for(auto Pin : Node->Pins)
 	{
@@ -426,7 +435,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 	{
 		return false;
 	}
-	
+
 	return true;
 }
 
