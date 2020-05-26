@@ -30,6 +30,7 @@
 #include "ThreadingHelpers.h"
 #include "Stats/StatsMisc.h"
 #include "Runtime/ImageWriteQueue/Public/ImageWriteTask.h"
+#include "Misc/FileHelper.h"
 
 FNodeDocsGenerator::~FNodeDocsGenerator()
 {
@@ -121,6 +122,11 @@ bool FNodeDocsGenerator::GT_Finalize(FString OutputPath)
 		return false;
 	}
 
+	if(!CopyStaticAssets(OutputPath))
+	{
+		return false;
+	}
+
 	return true;
 }
 
@@ -197,14 +203,14 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 	FString ImgFilename;
 	if(Node->AdvancedPinDisplay == ENodeAdvancedPins::Shown)
 	{
-		ImgFilename = FString::Printf(TEXT("%s_expanded.png"), *NodeName);
+		ImgFilename = FString::Printf(TEXT("%s_advanced.png"), *NodeName);
 	}
 	else
 	{
 		ImgFilename = FString::Printf(TEXT("%s.png"), *NodeName);
 	}
 
-	FString ScreenshotSaveName = ImageBasePath / ImgFilename;
+	FString ScreenshotSaveName = ImageBasePath / TEXT("nodes") / ImgFilename;
 
 	TUniquePtr<FImageWriteTask> ImageTask = MakeUnique<FImageWriteTask>();
 	ImageTask->PixelData = MoveTemp(PixelData);
@@ -218,7 +224,14 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 	{
 		// Success!
 		bSuccess = true;
-		State.ImageFilename = ImgFilename;
+		if(Node->AdvancedPinDisplay == ENodeAdvancedPins::Shown)
+		{
+			State.AdvancedImageFilename = ImgFilename;
+		}
+		else
+		{
+			State.ImageFilename = ImgFilename;
+		}
 	}
 	else
 	{
@@ -353,7 +366,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 {
 	SCOPE_SECONDS_COUNTER(GenerateNodeDocsTime);
 
-	auto NodeDocsPath = State.ClassDocsPath;
+	auto NodeDocsPath = State.ClassDocsPath / TEXT("nodes");
 	FString DocFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".xml"));
 
 	const FString FileTemplate = R"xxx(<?xml version="1.0" encoding="UTF-8"?>
@@ -385,8 +398,14 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 		NodeDesc = NodeDesc.Left(TargetIdx).TrimEnd();
 	}
 	AppendChildCDATA(Root, TEXT("description"), NodeDesc);
-	AppendChildCDATA(Root, TEXT("imgpath"), State.RelImageBasePath / State.ImageFilename);
 	AppendChildCDATA(Root, TEXT("category"), Node->GetMenuCategory().ToString());
+
+	auto Images = AppendChild(Root, TEXT("images"));
+	AppendChildCDATA(Images, TEXT("simple"), State.RelImageBasePath / State.ImageFilename);
+	if(State.AdvancedImageFilename != "")
+	{
+		AppendChildCDATA(Images, TEXT("advanced"), State.RelImageBasePath / State.AdvancedImageFilename);
+	}
 
 	auto Inputs = AppendChild(Root, TEXT("inputs"));
 	for(auto Pin : Node->Pins)
@@ -431,6 +450,11 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 		return false;
 	}
 
+	if(!AddStylesheetToXml(DocFilePath, TEXT("../../static/node.xsl")))
+	{
+		return false;
+	}
+
 	if(!UpdateClassDocWithNode(State.ClassDocXml.Get(), Node))
 	{
 		return false;
@@ -439,10 +463,26 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 	return true;
 }
 
+bool FNodeDocsGenerator::AddStylesheetToXml(FString const XmlFile, FString const Stylesheet)
+{
+	TArray<FString> Lines;
+	if(FFileHelper::LoadFileToStringArray(Lines, *XmlFile))
+	{
+		Lines.Insert(TEXT("<?xml-stylesheet type=\"text/xsl\" href=\"" + Stylesheet + "\"?>"), 1);
+		return FFileHelper::SaveStringArrayToFile(Lines, *XmlFile);
+	}
+	else
+	{
+		return false;
+	}
+}
+
 bool FNodeDocsGenerator::SaveIndexXml(FString const& OutDir)
 {
 	auto Path = OutDir / TEXT("index.xml");
 	IndexXml->Save(Path);
+
+	AddStylesheetToXml(Path, TEXT("static/index.xsl"));
 
 	return true;
 }
@@ -454,6 +494,36 @@ bool FNodeDocsGenerator::SaveClassDocXml(FString const& OutDir)
 		auto ClassId = GetClassDocId(Entry.Key.Get());
 		auto Path = OutDir / ClassId / (ClassId + TEXT(".xml"));
 		Entry.Value->Save(Path);
+
+		AddStylesheetToXml(Path, TEXT("../static/class.xsl"));
+	}
+
+	return true;
+}
+
+bool FNodeDocsGenerator::CopyStaticAssets(FString const& OutDir)
+{
+	UE_LOG(LogKantanDocGen, Log, TEXT("Copying static assets"));
+	auto& PluginManager = IPluginManager::Get();
+	auto Plugin = PluginManager.FindPlugin(TEXT("KantanDocGen"));
+	if(!Plugin.IsValid())
+	{
+		UE_LOG(LogKantanDocGen, Error, TEXT("Failed to locate plugin info"));
+		return false;
+	}
+
+	TArray<FString> Filenames;
+	const FString AssetPath = Plugin->GetBaseDir() / TEXT("Source") / TEXT("KantanDocGen") / TEXT("static");
+	IFileManager& FileManager = IFileManager::Get();
+	FileManager.FindFilesRecursive(Filenames, *AssetPath, TEXT("*"), true, false, false);
+
+	for(FString Filename : Filenames)
+	{
+		FString Destination = Filename;
+		Destination.RemoveFromStart(AssetPath);
+		Destination = OutDir / "static" / Destination;
+
+		FileManager.Copy(*Destination, *Filename);
 	}
 
 	return true;

@@ -33,6 +33,7 @@ public:
 		FString ClassDocsPath;
 		FString RelImageBasePath;
 		FString ImageFilename;
+		FString AdvancedImageFilename;
 
 		FNodeProcessingState():
 			ClassDocXml()
@@ -62,12 +63,14 @@ protected:
 	bool UpdateClassDocWithNode(FXmlFile* DocFile, UEdGraphNode* Node);
 	bool SaveIndexXml(FString const& OutDir);
 	bool SaveClassDocXml(FString const& OutDir);
+	bool CopyStaticAssets(FString const& OutDir);
 
 	static void AdjustNodeForSnapshot(UEdGraphNode* Node);
 	static FString GetClassDocId(UClass* Class);
 	static FString GetNodeDocId(UEdGraphNode* Node);
 	static UClass* MapToAssociatedClass(UK2Node* NodeInst, UObject* Source);
 	static bool IsSpawnerDocumentable(UBlueprintNodeSpawner* Spawner, bool bIsBlueprint);
+	static bool AddStylesheetToXml(FString const XmlFile, FString const Stylesheet);
 
 protected:
 	TWeakObjectPtr< UBlueprint > DummyBP;
