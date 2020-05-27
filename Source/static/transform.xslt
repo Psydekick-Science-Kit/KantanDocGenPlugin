@@ -6,8 +6,6 @@
 		<xsl:for-each select="/*/path/parent">../</xsl:for-each>
 	</xsl:variable>
 
-
-
 	<xsl:template match="/">
 		<html>
 			<head>
@@ -25,13 +23,14 @@
 				</link>
 
 				<script>
-					function resizeSidebar(frame){
-						var doResize = function(){
-							frame.style.height = (50+frame.contentDocument.body.scrollHeight) + 'px';
-						};
-						setTimeout(doResize, 500);
-					}
-					window.history.pushState({}, document.title, "./");
+					<xsl:attribute name="src">
+						<xsl:value-of select="$uri-root" />static/script.js
+					</xsl:attribute>
+				</script>
+				<script>
+					window.onload = function(){
+						DocBrowser.onPageLoad('<xsl:value-of select="$uri-root" />');
+					};
 				</script>
 			</head>
 			<body>
@@ -119,24 +118,26 @@
 	</xsl:template>
 
 	<xsl:template match="classes">
-		<table>
-			<tbody>
-				<xsl:for-each select="class">
-					<xsl:sort select="name"/>
-					<tr>
-						<td>
-							<a>
-								<xsl:attribute name="href">
-									<xsl:value-of select="$uri-root"/>
-									<xsl:value-of select="id" />
-								</xsl:attribute>
-								<xsl:apply-templates select="name" />
-							</a>
-						</td>
-					</tr>
-				</xsl:for-each>
-			</tbody>
-		</table>
+		<!-- Sidebar -->
+		<xsl:for-each select="class">
+			<xsl:sort select="name"/>
+
+			<details>
+				<xsl:attribute name="onToggle">
+					DocBrowser.toggleClassSidebar(this, '<xsl:value-of select="./id" />');
+				</xsl:attribute>
+				<summary>
+					<a>
+						<xsl:attribute name="href">
+							<xsl:value-of select="concat($uri-root, ./id, '/')" />
+						</xsl:attribute>
+						<xsl:value-of select="name" />
+					</a>
+				</summary>
+
+
+			</details>
+		</xsl:for-each>
 	</xsl:template>
 
 	<xsl:template match="functions">
