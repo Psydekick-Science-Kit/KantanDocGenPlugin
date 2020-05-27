@@ -116,7 +116,7 @@ public:
 
 		if(CDO->Settings.OutputDirectory.Path.IsEmpty())
 		{
-			CDO->Settings.OutputDirectory.Path = FPaths::ProjectSavedDir() / TEXT("KantanDocGen");
+			CDO->Settings.OutputDirectory.Path = FPaths::ProjectSavedDir() / TEXT("Documentation");
 		}
 
 		if(CDO->Settings.BlueprintContextClass == nullptr)

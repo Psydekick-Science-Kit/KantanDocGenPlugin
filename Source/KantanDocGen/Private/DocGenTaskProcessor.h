@@ -66,13 +66,6 @@ protected:
 protected:
 	void ProcessTask(TSharedPtr< FDocGenTask > InTask);
 
-	enum EIntermediateProcessingResult: uint8 {
-		Success,
-		SuccessWithErrors,
-		UnknownError,
-		DiskWriteFailure,
-	};
-
 protected:
 	TQueue< TSharedPtr< FDocGenTask > > Waiting;
 	TUniquePtr< FDocGenCurrentTask > Current;

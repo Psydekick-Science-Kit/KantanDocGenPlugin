@@ -30,7 +30,6 @@ public:
 	void GenerateDocs(struct FKantanDocGenSettings const& Settings);
 
 protected:
-	void ProcessIntermediateDocs(FString const& IntermediateDir, FString const& OutputDir, FString const& DocTitle, bool bCleanOutput);
 	void ShowDocGenUI();
 
 protected:

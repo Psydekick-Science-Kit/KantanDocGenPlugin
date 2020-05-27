@@ -523,7 +523,7 @@ bool FNodeDocsGenerator::CopyStaticAssets(FString const& OutDir)
 	}
 
 	TArray<FString> Filenames;
-	const FString AssetPath = Plugin->GetBaseDir() / TEXT("Source") / TEXT("KantanDocGen") / TEXT("static");
+	const FString AssetPath = Plugin->GetBaseDir() / TEXT("Source") / TEXT("static");
 	IFileManager& FileManager = IFileManager::Get();
 	FileManager.FindFilesRecursive(Filenames, *AssetPath, TEXT("*"), true, false, false);
 
@@ -546,7 +546,6 @@ bool FNodeDocsGenerator::CopyStaticAssets(FString const& OutDir)
 
 	return true;
 }
-
 
 void FNodeDocsGenerator::AdjustNodeForSnapshot(UEdGraphNode* Node)
 {

@@ -89,12 +89,12 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 {
 	/********** Lambdas for the game thread to execute **********/
 
-	auto GameThread_InitDocGen = [this](FString const& DocTitle, FString const& IntermediateDir) -> bool
+	auto GameThread_InitDocGen = [this](FString const& DocTitle, FString const& OutputDir) -> bool
 	{
 		Current->Task->Notification->SetExpireDuration(2.0f);
 		Current->Task->Notification->SetText(LOCTEXT("DocGenInProgress", "Doc gen in progress"));
 
-		return Current->DocGen->GT_Init(DocTitle, IntermediateDir, Current->Task->Settings.BlueprintContextClass);
+		return Current->DocGen->GT_Init(DocTitle, OutputDir, Current->Task->Settings.BlueprintContextClass);
 	};
 
 	TFunction<void()> GameThread_EnqueueEnumerators = [this]()
@@ -203,23 +203,22 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 	Current = MakeUnique< FDocGenCurrentTask >();
 	Current->Task = InTask;
 
-	FString IntermediateDir = FPaths::ProjectIntermediateDir() / TEXT("KantanDocGen") / Current->Task->Settings.DocumentationTitle;
+	FString OutputDir = Current->Task->Settings.OutputDirectory.Path;
 
 	DocGenThreads::RunOnGameThread(GameThread_EnqueueEnumerators);
 
 	// Initialize the doc generator
 	Current->DocGen = MakeUnique< FNodeDocsGenerator >();
 
-	if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_InitDocGen, Current->Task->Settings.DocumentationTitle, IntermediateDir))
+	if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_InitDocGen, Current->Task->Settings.DocumentationTitle, OutputDir))
 	{
 		UE_LOG(LogKantanDocGen, Error, TEXT("Failed to initialize doc generator!"));
 		return;
 	}
 
-	bool const bCleanIntermediate = true;
-	if(bCleanIntermediate)
+	if(Current->Task->Settings.bCleanOutputDirectory)
 	{
-		IFileManager::Get().DeleteDirectory(*IntermediateDir, false, true);
+		IFileManager::Get().DeleteDirectory(*OutputDir, false, true);
 	}
 
 	for(auto const& Name : Current->Task->Settings.ExcludedClasses)
@@ -304,7 +303,7 @@ void FDocGenTaskProcessor::ProcessTask(TSharedPtr< FDocGenTask > InTask)
 
 	if(Current->Task->Settings.bGenerateXML)
 	{
-		if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_FinalizeDocs, IntermediateDir))
+		if(!DocGenThreads::RunOnGameThreadRetVal(GameThread_FinalizeDocs, OutputDir))
 		{
 			UE_LOG(LogKantanDocGen, Error, TEXT("Failed to finalize xml docs!"));
 			return;
