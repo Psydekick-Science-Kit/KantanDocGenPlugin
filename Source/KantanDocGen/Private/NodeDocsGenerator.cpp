@@ -199,7 +199,7 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 	}
 
 	State.RelImageBasePath = TEXT(".");
-	FString ImageBasePath = State.ClassDocsPath;
+	FString ImageBasePath = State.ClassDocsPath / NodeName;
 	FString ImgFilename;
 	if(Node->AdvancedPinDisplay == ENodeAdvancedPins::Shown)
 	{
@@ -210,7 +210,7 @@ bool FNodeDocsGenerator::GenerateNodeImage(UEdGraphNode* Node, FNodeProcessingSt
 		ImgFilename = FString::Printf(TEXT("%s.png"), *NodeName);
 	}
 
-	FString ScreenshotSaveName = ImageBasePath / TEXT("nodes") / ImgFilename;
+	FString ScreenshotSaveName = ImageBasePath / ImgFilename;
 
 	TUniquePtr<FImageWriteTask> ImageTask = MakeUnique<FImageWriteTask>();
 	ImageTask->PixelData = MoveTemp(PixelData);
@@ -315,7 +315,7 @@ TSharedPtr< FXmlFile > FNodeDocsGenerator::InitIndexXml(FString const& IndexTitl
 	TSharedPtr< FXmlFile > File = MakeShareable(new FXmlFile(FileTemplate, EConstructMethod::ConstructFromBuffer));
 	auto Root = File->GetRootNode();
 
-	AppendChildCDATA(Root, TEXT("display_name"), IndexTitle);
+	AppendChildRaw(Root, TEXT("name"), IndexTitle);
 	AppendChild(Root, TEXT("classes"));
 
 	return File;
@@ -324,15 +324,19 @@ TSharedPtr< FXmlFile > FNodeDocsGenerator::InitIndexXml(FString const& IndexTitl
 TSharedPtr< FXmlFile > FNodeDocsGenerator::InitClassDocXml(UClass* Class)
 {
 	const FString FileTemplate = R"xxx(<?xml version="1.0" encoding="UTF-8"?>
-<root></root>)xxx";
+<class></class>)xxx";
 
 	TSharedPtr< FXmlFile > File = MakeShareable(new FXmlFile(FileTemplate, EConstructMethod::ConstructFromBuffer));
 	auto Root = File->GetRootNode();
 
-	AppendChildCDATA(Root, TEXT("docs_name"), DocsTitle);
-	AppendChildCDATA(Root, TEXT("id"), GetClassDocId(Class));
-	AppendChildCDATA(Root, TEXT("display_name"), FBlueprintEditorUtils::GetFriendlyClassDisplayName(Class).ToString());
-	AppendChild(Root, TEXT("nodes"));
+	AppendChildRaw(Root, TEXT("id"), GetClassDocId(Class));
+	AppendChildRaw(Root, TEXT("name"), FBlueprintEditorUtils::GetFriendlyClassDisplayName(Class).ToString());
+	AppendChild(Root, TEXT("functions"));
+
+	auto PathNode = AppendChild(Root, TEXT("path"));
+	auto ParentPathNode = AppendChild(PathNode, TEXT("parent"));
+	AppendChildRaw(ParentPathNode, TEXT("uri"), TEXT("../index.xml"));
+	AppendChildRaw(ParentPathNode, TEXT("name"), DocsTitle);
 
 	return File;
 }
@@ -342,18 +346,18 @@ bool FNodeDocsGenerator::UpdateIndexDocWithClass(FXmlFile* DocFile, UClass* Clas
 	auto ClassId = GetClassDocId(Class);
 	auto Classes = DocFile->GetRootNode()->FindChildNode(TEXT("classes"));
 	auto ClassElem = AppendChild(Classes, TEXT("class"));
-	AppendChildCDATA(ClassElem, TEXT("id"), ClassId);
-	AppendChildCDATA(ClassElem, TEXT("display_name"), FBlueprintEditorUtils::GetFriendlyClassDisplayName(Class).ToString());
+	AppendChildRaw(ClassElem, TEXT("id"), ClassId);
+	AppendChildRaw(ClassElem, TEXT("name"), FBlueprintEditorUtils::GetFriendlyClassDisplayName(Class).ToString());
 	return true;
 }
 
 bool FNodeDocsGenerator::UpdateClassDocWithNode(FXmlFile* DocFile, UEdGraphNode* Node)
 {
 	auto NodeId = GetNodeDocId(Node);
-	auto Nodes = DocFile->GetRootNode()->FindChildNode(TEXT("nodes"));
-	auto NodeElem = AppendChild(Nodes, TEXT("node"));
-	AppendChildCDATA(NodeElem, TEXT("id"), NodeId);
-	AppendChildCDATA(NodeElem, TEXT("shorttitle"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
+	auto Nodes = DocFile->GetRootNode()->FindChildNode(TEXT("functions"));
+	auto NodeElem = AppendChild(Nodes, TEXT("function"));
+	AppendChildRaw(NodeElem, TEXT("id"), NodeId);
+	AppendChildRaw(NodeElem, TEXT("name"), Node->GetNodeTitle(ENodeTitleType::ListView).ToString());
 	return true;
 }
 
@@ -366,22 +370,28 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 {
 	SCOPE_SECONDS_COUNTER(GenerateNodeDocsTime);
 
-	auto NodeDocsPath = State.ClassDocsPath / TEXT("nodes");
-	FString DocFilePath = NodeDocsPath / (GetNodeDocId(Node) + TEXT(".xml"));
+	FString DocFilePath = State.ClassDocsPath / GetNodeDocId(Node) / TEXT("index.xml");
 
 	const FString FileTemplate = R"xxx(<?xml version="1.0" encoding="UTF-8"?>
-<root></root>)xxx";
+<function></function>)xxx";
 
 	FXmlFile File(FileTemplate, EConstructMethod::ConstructFromBuffer);
 	auto Root = File.GetRootNode();
 
-	AppendChildCDATA(Root, TEXT("docs_name"), DocsTitle);
+	auto PathNode = AppendChild(Root, TEXT("path"));
+	auto ParentPathNode = AppendChild(PathNode, TEXT("parent"));
+	AppendChildRaw(ParentPathNode, TEXT("uri"), TEXT("../../index.xml"));
+	AppendChildRaw(ParentPathNode, TEXT("name"), DocsTitle);
+
+	ParentPathNode = AppendChild(PathNode, TEXT("parent"));
+	AppendChildRaw(ParentPathNode, TEXT("uri"), TEXT("../index.xml"));
+	AppendChildRaw(ParentPathNode, TEXT("name"), State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("id"))->GetContent());
+
 	// Since we pull these from the class xml file, the entries are already CDATA wrapped
-	AppendChildRaw(Root, TEXT("class_id"), State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("id"))->GetContent());//GetClassDocId(Class));
-	AppendChildRaw(Root, TEXT("class_name"), State.ClassDocXml->GetRootNode()->FindChildNode(TEXT("display_name"))->GetContent());// FBlueprintEditorUtils::GetFriendlyClassDisplayName(Class).ToString());
+	AppendChildRaw(Root, TEXT("id"), GetNodeDocId(Node));
 
 	FString NodeShortTitle = Node->GetNodeTitle(ENodeTitleType::ListView).ToString();
-	AppendChildCDATA(Root, TEXT("shorttitle"), NodeShortTitle.TrimEnd());
+	AppendChildRaw(Root, TEXT("shorttitle"), NodeShortTitle.TrimEnd());
 
 	FString NodeFullTitle = Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString();
 	auto TargetIdx = NodeFullTitle.Find(TEXT("Target is "), ESearchCase::CaseSensitive);
@@ -389,7 +399,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 	{
 		NodeFullTitle = NodeFullTitle.Left(TargetIdx).TrimEnd();
 	}
-	AppendChildCDATA(Root, TEXT("fulltitle"), NodeFullTitle);
+	AppendChildRaw(Root, TEXT("name"), NodeFullTitle);
 
 	FString NodeDesc = Node->GetTooltipText().ToString();
 	TargetIdx = NodeDesc.Find(TEXT("Target is "), ESearchCase::CaseSensitive);
@@ -397,14 +407,14 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 	{
 		NodeDesc = NodeDesc.Left(TargetIdx).TrimEnd();
 	}
-	AppendChildCDATA(Root, TEXT("description"), NodeDesc);
-	AppendChildCDATA(Root, TEXT("category"), Node->GetMenuCategory().ToString());
+	AppendChildRaw(Root, TEXT("description"), NodeDesc);
+	AppendChildRaw(Root, TEXT("category"), Node->GetMenuCategory().ToString());
 
 	auto Images = AppendChild(Root, TEXT("images"));
-	AppendChildCDATA(Images, TEXT("simple"), State.RelImageBasePath / State.ImageFilename);
+	AppendChildRaw(Images, TEXT("simple"), State.RelImageBasePath / State.ImageFilename);
 	if(State.AdvancedImageFilename != "")
 	{
-		AppendChildCDATA(Images, TEXT("advanced"), State.RelImageBasePath / State.AdvancedImageFilename);
+		AppendChildRaw(Images, TEXT("advanced"), State.RelImageBasePath / State.AdvancedImageFilename);
 	}
 
 	auto Inputs = AppendChild(Root, TEXT("inputs"));
@@ -419,9 +429,9 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 				FString PinName, PinType, PinDesc;
 				ExtractPinInformation(Pin, PinName, PinType, PinDesc);
 
-				AppendChildCDATA(Input, TEXT("name"), PinName);
-				AppendChildCDATA(Input, TEXT("type"), PinType);
-				AppendChildCDATA(Input, TEXT("description"), PinDesc);
+				AppendChildRaw(Input, TEXT("name"), PinName);
+				AppendChildRaw(Input, TEXT("type"), PinType);
+				AppendChildRaw(Input, TEXT("description"), PinDesc);
 			}
 		}
 	}
@@ -438,9 +448,9 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 				FString PinName, PinType, PinDesc;
 				ExtractPinInformation(Pin, PinName, PinType, PinDesc);
 
-				AppendChildCDATA(Output, TEXT("name"), PinName);
-				AppendChildCDATA(Output, TEXT("type"), PinType);
-				AppendChildCDATA(Output, TEXT("description"), PinDesc);
+				AppendChildRaw(Output, TEXT("name"), PinName);
+				AppendChildRaw(Output, TEXT("type"), PinType);
+				AppendChildRaw(Output, TEXT("description"), PinDesc);
 			}
 		}
 	}
@@ -450,7 +460,7 @@ bool FNodeDocsGenerator::GenerateNodeDocs(UK2Node* Node, FNodeProcessingState& S
 		return false;
 	}
 
-	if(!AddStylesheetToXml(DocFilePath, TEXT("../../static/node.xsl")))
+	if(!AddStylesheetToXml(DocFilePath, TEXT("../../static/transform.xslt")))
 	{
 		return false;
 	}
@@ -482,7 +492,7 @@ bool FNodeDocsGenerator::SaveIndexXml(FString const& OutDir)
 	auto Path = OutDir / TEXT("index.xml");
 	IndexXml->Save(Path);
 
-	AddStylesheetToXml(Path, TEXT("static/index.xsl"));
+	AddStylesheetToXml(Path, TEXT("static/transform.xslt"));
 
 	return true;
 }
@@ -492,10 +502,10 @@ bool FNodeDocsGenerator::SaveClassDocXml(FString const& OutDir)
 	for(auto const& Entry : ClassDocsMap)
 	{
 		auto ClassId = GetClassDocId(Entry.Key.Get());
-		auto Path = OutDir / ClassId / (ClassId + TEXT(".xml"));
+		auto Path = OutDir / ClassId / TEXT("index.xml");
 		Entry.Value->Save(Path);
 
-		AddStylesheetToXml(Path, TEXT("../static/class.xsl"));
+		AddStylesheetToXml(Path, TEXT("../static/transform.xslt"));
 	}
 
 	return true;
@@ -521,9 +531,17 @@ bool FNodeDocsGenerator::CopyStaticAssets(FString const& OutDir)
 	{
 		FString Destination = Filename;
 		Destination.RemoveFromStart(AssetPath);
-		Destination = OutDir / "static" / Destination;
+		Destination = OutDir / TEXT("static") / Destination;
 
 		FileManager.Copy(*Destination, *Filename);
+	}
+
+	FileManager.FindFilesRecursive(Filenames, *OutDir, TEXT("*"), false, true, true);
+	FString IndexHTML = OutDir / TEXT("static") / TEXT("index.html");
+	for(FString Filename : Filenames)
+	{
+		FString Destination = Filename / TEXT("index.html");
+		FileManager.Copy(*Destination, *IndexHTML);
 	}
 
 	return true;
