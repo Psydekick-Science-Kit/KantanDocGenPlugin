@@ -582,16 +582,6 @@ If there is no special mapping for the node, the function determines the class f
 */
 UClass* FNodeDocsGenerator::MapToAssociatedClass(UK2Node* NodeInst, UObject* Source)
 {
-	// For nodes derived from UK2Node_CallFunction, associate with the class owning the called function.
-	if(auto FuncNode = Cast< UK2Node_CallFunction >(NodeInst))
-	{
-		auto Func = FuncNode->GetTargetFunction();
-		if(Func)
-		{
-			return Func->GetOwnerClass();
-		}
-	}
-
 	// Default fallback
 	if(auto SourceClass = Cast< UClass >(Source))
 	{
@@ -600,6 +590,15 @@ UClass* FNodeDocsGenerator::MapToAssociatedClass(UK2Node* NodeInst, UObject* Sou
 	else if(auto SourceBP = Cast< UBlueprint >(Source))
 	{
 		return SourceBP->GeneratedClass;
+	}
+	// For nodes derived from UK2Node_CallFunction, associate with the class owning the called function.
+	else if(auto FuncNode = Cast< UK2Node_CallFunction >(NodeInst))
+	{
+		auto Func = FuncNode->GetTargetFunction();
+		if(Func)
+		{
+			return Func->GetOwnerClass();
+		}
 	}
 	else
 	{
