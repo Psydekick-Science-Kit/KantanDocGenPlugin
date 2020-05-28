@@ -600,10 +600,8 @@ UClass* FNodeDocsGenerator::MapToAssociatedClass(UK2Node* NodeInst, UObject* Sou
 			return Func->GetOwnerClass();
 		}
 	}
-	else
-	{
-		return nullptr;
-	}
+
+	return nullptr;
 }
 
 bool FNodeDocsGenerator::IsSpawnerDocumentable(UBlueprintNodeSpawner* Spawner, bool bIsBlueprint)
