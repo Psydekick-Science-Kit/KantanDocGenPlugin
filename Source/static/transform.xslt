@@ -17,15 +17,11 @@
 				</title>
 
 				<link rel="stylesheet" type="text/css">
-					<xsl:attribute name="href">
-						<xsl:value-of select="$uri-root" />static/style.css
-					</xsl:attribute>
+					<xsl:attribute name="href"><xsl:value-of select="$uri-root" />static/style.css</xsl:attribute>
 				</link>
 
 				<script>
-					<xsl:attribute name="src">
-						<xsl:value-of select="$uri-root" />static/script.js
-					</xsl:attribute>
+					<xsl:attribute name="src"><xsl:value-of select="$uri-root" />static/script.js</xsl:attribute>
 				</script>
 				<script>
 					window.onload = function(){
@@ -57,7 +53,10 @@
 
 	<xsl:template match="/class">
 		<xsl:apply-templates select="path" />
+
 		<h2><xsl:value-of select="name" /></h2>
+		<p><xsl:value-of select="description"/></p>
+
 		<h3>Functions</h3>
 		<xsl:apply-templates select="functions" />
 	</xsl:template>
@@ -118,24 +117,21 @@
 	</xsl:template>
 
 	<xsl:template match="classes">
-		<!-- Sidebar -->
 		<xsl:for-each select="class">
 			<xsl:sort select="name"/>
 
 			<details>
-				<xsl:attribute name="onToggle">
-					DocBrowser.toggleClassSidebar(this, '<xsl:value-of select="./id" />');
-				</xsl:attribute>
-				<summary>
-					<a>
+				<xsl:attribute name="onToggle">DocBrowser.toggleClassSidebar(this, '<xsl:value-of select="./id" />');</xsl:attribute>
+				<summary><xsl:value-of select="name" /></summary>
+
+				<ul>
+					<li class="info"><a>
 						<xsl:attribute name="href">
 							<xsl:value-of select="concat($uri-root, ./id, '/')" />
 						</xsl:attribute>
-						<xsl:value-of select="name" />
-					</a>
-				</summary>
-
-
+						<xsl:text>Class information</xsl:text>
+					</a></li>
+				</ul>
 			</details>
 		</xsl:for-each>
 	</xsl:template>
